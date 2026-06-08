@@ -1,0 +1,363 @@
+\documentclass[11pt, a4paper]{article}
+
+% Required Packages
+\usepackage[top=1in, bottom=1in, left=0.75in, right=0.75in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip} % For better paragraph spacing
+
+% Modern Font Configuration (Clean, Professional Sans-Serif)
+\usepackage[scaled=0.92]{helvet}
+\usepackage[T1]{fontenc}
+\renewcommand{\familydefault}{\sfdefault}
+
+% Formatting adjustments
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+\renewcommand{\arraystretch}{1.3} % Adds padding to tables
+
+\begin{document}
+
+\begin{center}
+    \Large\textbf{A Conceptual Discussion on Recursive Vault Optimization \& Vault Risk Analysis} \\
+    \vspace{0.2cm}
+    \large \textit{Joe Ho} \\
+    \vspace{0.1cm}
+    \normalsize October 2025
+\end{center}
+\vspace{0.5cm}
+
+\section*{A. Outline}
+We first formulate the returns of leveraged staking and identify the key factors driving the corresponding returns and risks. Then we can estimate and simulate the risk-adjusted returns and other risk measures with different optimization frameworks and scenarios, so as to identify the optimal solutions and potential strategy improvements.
+
+\section*{B. Problem Formulation}
+
+\subsection*{Analytical Procedures of Direct Leverage Staking}
+The procedures of direct leverage staking can be briefly broken down as the followings:
+
+\begin{enumerate}
+    \item The vault initially stakes a principal amount of $E$ units of ETH on a liquid staking protocol (e.g. Lido) at time $T(0)$. The vault then acquires $E/p_{ETH/stETH}$ units of stETH in return. $P_{ETH/stETH}$ stands for the ETH to stETH price in the primary market. We assume it to be 1.
+    \item The vault then supplies all stETH on a lending protocol (e.g. Aave) to borrow $(E \cdot LTV \cdot p_{stETH/ETH,Aave})$ units of ETH. $LTV$ represents the loan-to-value ratio and $P_{stETH/ETH,Aave}$ refers to the stETH to ETH price on Aave lending protocol. The vault further restakes the borrowed ETH on Lido. We assume all liquidity outside the part would be borrowed and lent.
+    \item Steps 1 and 2 are looped for $n$ times to boost both the staking reward from the liquid staking protocol and the net deposit-borrow revenue from the lending protocol. The loan-to-value ratio needs to remain above the lending protocol's liquidation threshold.
+\end{enumerate}
+
+\subsection*{Capital Allocation of the Vault}
+The initial set-up of capital allocation can be defined as a distribution between leveraged ethereum strategies and stablecoin lending:
+\begin{equation*}
+    C = E \cdot p_{eth/usd} + S \cdot p_{usdc/usd}
+\end{equation*}
+and put alternatively, we have
+\begin{equation*}
+    E \cdot p_{eth/usd} = C \cdot c \quad \text{and} \quad S \cdot p_{usdc/usd} = C \cdot (1-c)
+\end{equation*}
+where $C$ is the total liquidity and $c$ is the proportion allocated to the ethereum part $E$ and $(1-c)$ is the proportion allocated to stablecoin lending $S$. According to the current set-up, $c$ is 90\% and rebalancing is done to maintain this ratio. The allocation proportion $c$ can be a key target for optimization with respect to different targets. Here $C$ is measured in terms of USD.
+
+\subsection*{Formulation of Vault Returns}
+We define the leverage multiplier as $Lev = A/E$, where $E$ is the initial investment of ETH while $A$ is the leveraged staking amount through looping. In our case $Lev = 10$ given a 10x multiplier.
+
+For the leveraged staking part, we formulate the corresponding total return $R_{leveraged\_staking}$ as
+\begin{equation*}
+    R_{leveraged\_staking} = R_s + R_D - R_B
+\end{equation*}
+where:
+\begin{itemize}
+    \item Staking return $R_s = Lev \cdot r_s$, where $r_s$ is the base staking return;
+    \item Lending supply return $R_D = (D/E) \cdot r_D$, where $D$ is the total amount of stETH supplied through the loop process and $r_D$ is the lending rate for stETH;
+    \item Interests paid for borrowing $R_B = B / (E \cdot LTV \cdot p_{ETH/stETH,Aave}) \cdot r_B$, where $B$ is the total debt amount of ETH borrowed through the loop process.
+\end{itemize}
+
+For simplicity, we assume the depegging probability between USDC and USD is practically zero and set $R_{USDC/USD} = 0$. This assumption can be further relaxed for extreme conditions. Now we have the approximate return of the vault in terms of USD expressed as the following:
+\begin{equation*}
+    R_{vault} = c \cdot (R_{ETH/USD} + R_{leveraged\_staking} + R_{ETH/USD} \cdot R_{leveraged\_staking}) + (1 - c) \cdot R_{stablecoin\_staking}
+\end{equation*}
+
+Simplifying the computation of $R_{leveraged\_staking}$, we can specifically approximate the staking returns:
+\begin{equation*}
+    R_{leveraged\_staking} \approx Lev \cdot (r_s + r_D) - (Lev - 1) \cdot (r_B) \quad \text{if there is no liquidation}
+\end{equation*}
+and
+\begin{equation*}
+    R_{leveraged\_staking} \approx L_{liquidation} \quad \text{if there is liquidation}
+\end{equation*}
+where $L_{liquidation} \approx \min(-1, Lev \cdot \text{price drawdown of stETH})$.
+
+\textbf{Remarks:}
+\begin{itemize}
+    \item Liquidation occurs if the health factor of the position is $< 1$ and it implies that liquidation happens if the percentage change of stETH/ETH price is greater than (LTV / Liquidation Threshold $> 1$). Using the current maximum LTV (93\%) and LT (95\%) on Lido, liquidation happens when the relative price drops by around -2.11\%.
+    \item We assume 50\% liquidation of collateral whenever liquidation happens. This is the maximum proportion allowed by AAVE. Further penalties can be added in practice.
+    \item If liquidation happens, we assume the interest returns from staking are trivial as compared to the loss of collateral from liquidation, and so for simplicity we only consider the liquidation loss here.
+    \item We simply assume at the time of building up the leveraged portfolio we can borrow ETH with stETH at parity prices and hence the same units of ETH and stETH are staked and lent.
+    \item The maximum leverage can be bounded by around $1/(1-LTV) \approx 14.28$ times given the current maximum LTV ratio of 93\% on Lido.
+\end{itemize}
+
+\subsection*{Key Drivers of Returns and Risks}
+There are several key factors of returns and risks at play in this classical recursive leveraged staking strategy.
+
+\textbf{1. Base staking return from the staking protocol $r_s$} \\
+This is the underlying return driver and depends on Ethereum's underlying staking dynamics. Obviously a higher $r_s$ leads to a higher $R_{Vault}$. For example, the recent 30-day APY at Lido hovers around 2.62\% and the Binance staked ETH: 2.58\%.
+
+\textbf{2. Price return and volatility of ETH in USD} \\
+As we are concerned about the returns in USD, we hope to have a high $R_{ETH/USD}$ return over the staking period. Also a higher price volatility of ETH can drive a higher volatility in $R_{vault}$. Therefore, the overall return in USD tends to be dominated by the ETH/USD return in practice as its range tends to be much larger and more volatile than the staking return.
+
+\textbf{3. Price volatility between ETH and the stETH and the associated liquidity risk} \\
+The stability in the price between ETH and stETH is the key factor in sustaining the strategy's robustness. If stETH devalues a lot with respect to ETH and hits the liquidation threshold determined by the lending protocol, the vault can incur severe losses from liquidation. Further rounds of liquidations can even occur in volatile times like the Terra collapse crisis. We can model the probability that the relative price of stETH to ETH would hit the liquidation threshold. 
+\begin{itemize}
+    \item Maximum drawdown of the relative price of stETH to ETH: the stETH reached its lowest point of 0.931 on May 18, 2022; we can use an estimate of $(0.931 - 1) = -6.9\%$ as the maximum drawdown.
+    \item Current max LTV ratio at Lido: 93.00\%
+    \item Current liquidation threshold (LT) at Lido: 95.00\%
+\end{itemize}
+
+\textbf{4. Rate spread between the sum of staking return and lending rate $(r_s + r_D)$ and the borrowing rate $(r_B)$} \\
+As illustrated in the return equation of leveraged staking, i.e.,
+\begin{equation*}
+    R_{leveraged\_staking} \approx Lev \cdot (r_s + r_D) - (Lev - 1) \cdot (r_B) = r_s + (Lev - 1) \cdot (r_s + r_D - r_B)
+\end{equation*}
+If there is no liquidation, the net rate spread between $r_s + r_D$ and $r_B$ is the core driver of the looping part. If this net spread goes negative, the looping strategy's return easily turns negative. 
+\begin{itemize}
+    \item Current Morpho ETH Borrow Rate: 2.18\%
+    \item Current 6M-average Borrow Rate for ETH on AAVE Core: 2.74\%
+    \item Current 6M-average Supply Rate for stETH on AAVE Core: 0.02\%
+\end{itemize}
+
+\textbf{5. Leverage Ratio} \\
+The achievable leverage ratio $Lev$ depends on the chosen number of looping rounds (i.e. stake ETH, get stETH and further borrow ETH with stETH), the LTV ratio and also the relative price between ETH and stETH. Adopting higher leverages amplifies the returns and also the liquidation effect.
+
+\section*{C. Optimization Methods and Return-Risk Trade-offs}
+
+\subsection*{Mean-CVaR Model}
+We can quantitatively consider the vault as a classical portfolio optimization strategy with some risk measures tailored for the highly volatile nature of the crypto market and the strategy itself. We are thus particularly concerned about the downside risk and the big losses incurred in the vault strategy, and hence we may prefer to adopt optimization strategies that can help better withstand the impact of big losses when making a trade-off between risk and return.
+
+One ideal option is to utilize the mean-CVaR model for optimizing the asset allocations. It seeks to maximize expected portfolio return while minimizing CVaR, which measures the expected loss in the worst-case scenarios. The value-at-risk (VaR) denotes the maximum loss with a specified confidence level in the return distribution and the conditional value-at-risk (CVaR) goes even further by computing the expected loss conditional on losses exceeding the VaR. Therefore CVaR is a measure highly focused on the extreme tail of a return distribution.
+
+Then we can model the portfolio optimization strategy as the following maximization problem:
+\begin{equation*}
+    \text{Maximize } \mathbb{E}[R_{Vault}] - \lambda \cdot CVaR_{\alpha}(c)
+\end{equation*}
+with respect to the portfolio allocation $c$ and the leverage ratio $Lev$, subject to the leverage limit $Lev \le 1/(1-LTV)$ and all allocations sum up to 1.
+
+The corresponding optimal levels of allocations $c$ and the leverage ratio $Lev$ can be obtained through solving the maximization problem numerically. We can utilize the historical data (ETH/USD prices, ETH/stETH prices, staking returns, the rate spread between the sum of staking return and lending rate $(r_s + r_D)$ and the borrowing rate $(r_B)$) as the basis for estimating the distribution of historical returns and liquidation events. Alternatively, we can use synthetic or hypothetical data with different distributions for identifying the optimal weights. 
+
+$\lambda$ is the level of risk aversion and $\alpha$ is the confidence level controlling the confidence level. If the market is volatile and we prefer more conservative allocations, we may further push the tail to more extreme values (i.e. smaller $\alpha$).
+
+In addition to the CVaR model, risk-adjusted returns like Sortino Ratio and Sharpe Ratio can also be adopted for comparing the returns adjusted for risks. Sortino Ratio is a particularly good fit for capturing downside deviation as it measures the expected return per unit of downside variation.
+
+\section*{D. Potential Strategy Improvements and Risk Management Measures}
+
+\subsection*{Strategy Target and Issues}
+We first need to clarify the strategy target, whether it is to maintain the return at around 10\% in terms of ETH or USD. 
+
+If the purpose is to attain 10\% in ETH, then the key drivers are the stability in the peg of stETH and ETH and the spread between the return (staking return + lending supply yield) and the borrowing yield. We need to actively monitor these two factors and set up buffers to avoid liquidation and negative spreads. Using figures from Lido and Morpho, the approximate return from 10x leveraged staking is around $2.6\% + 9 \cdot (2.6\% + 0.02\% - 2.18\%) = 6.56\%$, which falls short of the 10\% APR target. It sometimes can even go into negative range, as seen in Index Coop's wstETH15x vault, which does the leverage through staking at Lido and borrowing Morpho.
+
+If the current strategy is to attain around 10\% APR in terms of USD, then the current strategy's realized return can hardly stay at around this target as the price return of ETH even has a much higher variation than the net leveraged staking return in terms of ETH.
+
+\subsection*{Potential Improvements on the strategy design}
+
+\textbf{1. Allocating capital to other assets such as stablecoins for leveraged staking} \\
+A simple approach for stabilizing the returns is to allocate a portion of capital to other assets with low price correlations with ethereum can help diversify the portfolio and mitigate the overall volatility and the drawdowns. The optimal weights of different leveraged/non-leveraged positions can also be determined through the Mean-CVaR Model. An example is allocating capital to other leveraged stablecoin positions and as in ethereum's case, the depegging risks and return spreads need to be closely monitored. The returns from the stablecoin lending part can also be further improved by switching to other stablecoins or platforms with higher APRs while maintaining similar risk levels.
+
+\textbf{2. Diversifying and reallocating capital to other staking protocol} \\
+Staking protocols other than Lido can have higher base staking returns. For example, the current Binance staked ETH and Rocket Pool are respectively 2.8\% and 2.9\%. The return spread can then be significantly improved through leverages if the capital allocation is prioritized based on the base staking yields.
+
+\textbf{3. Adopting dynamic approaches for risk management in bad markets} \\
+When market sentiment is volatile, we can utilize the CVaR model to readjust the allocation weights and deleverages through adjusting the model parameters: adjusting the risk aversion parameter $\lambda$ upward and $\alpha$ downward for a more conservative allocation. The CVaR model can also be replaced by a drawdown model for capturing the worst-scenario case, i.e. replacing CVaR with the historical maximum drawdown in history. Also we can add additional safety constraints like adding liquidation buffers on top of the optimization problems.
+
+\textbf{4. Introducing delta-neutral hedges} \\
+If the target is to attain a rather stable APR in USD, then we may short the vault's ETH exposure through derivatives like perpetual futures such that the portfolio's overall return can be better isolated from the price risk. This approach can bring costs such as basis risk and funding rate volatility; and operationally it can be hard to dynamically hedge the newly minted staking rewards.
+
+\section*{E. Risk Scoring Model}
+Here I propose a systematic risk scoring model that uses a weighted average score from critical and measurable risk factors and maps quantitative metrics to qualitative scores. The overall Vault Risk Score will be a weighted average of three main risk categories: Market Volatility, Platform Trading, and Protocol Security.
+
+\subsection*{Overall Risk Classification and Corresponding Metrics}
+\begin{tabularx}{\textwidth}{@{} X X c @{}}
+\toprule
+\textbf{Risk Factor ($i$)} & \textbf{Corresponding Metrics} & \textbf{Weight ($W_i$)} \\
+\midrule
+\textbf{A. Market Volatility Risks} & & \textbf{40\%} \\
+S1: Liquidation \& Depegging Risk & Liquidation Frequency (LF), Buffer-To-Drawdown Ratio (BTD) and Maximum Liquidation Losses (MLF) & 20\% \\
+S2: Price Risk & Beta Coefficient of the portfolio ($\beta$) & 20\% \\
+\midrule
+\textbf{B. DeFi Trading Risks} & & \textbf{40\%} \\
+S3: Negative Carry Risk & Negative Net Carry (NNC) & 20\% \\
+S4: Liquidity \& Slippage Risk & Liquidity Depth-to-Maximum Vault Size Ratio & 10\% \\
+S5: Impermanent Loss & Impermanent Loss (IL) & 10\% \\
+\midrule
+\textbf{C. Protocol Security Risks} & & \textbf{20\%} \\
+S6: Audit Risk & Number of Audits / Bug Bounty Size & 10\% \\
+S7: Protocol Dependency & Risk of Lending/Staking Platform Failure & 10\% \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{A. Market Volatility Risks}
+
+\textbf{S1. Liquidation \& Depegging Risk} \\
+\textbf{S1a.} Liquidation frequency measures the frequency with which a catastrophic price drop (depegging of stETH/ETH) hits the current liquidation threshold historically.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Liquidation Frequency (LF) (Events/Year)} & \textbf{Score (S1a)} \\
+\midrule
+$\le 1.5$ & 1 \\
+$1.5 < LF \le 2.5$ & 2 \\
+$1.5 < LF \le 3$ & 3 \\
+$LF > 3$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} The daily stETH/ETH price change only hit 4 liquidations given the current threshold from 1/1/2022 to 13/10/2025, so it is around 1.06 per year and $S1a = 1$.
+
+\textbf{S1b.} Buffer-to-drawdown ratio measures the ratio between the required drawdown for liquidation / maximum historical drawdown. A higher ratio implies a better buffer provided against the worst-case scenario.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Buffer-to-Drawdown Ratio (BTD)} & \textbf{Score (S1b)} \\
+\midrule
+$\ge 1$ & 1 \\
+$0.5 < BTD \le 1$ & 2 \\
+$0.25 < BTD \le 0.5$ & 3 \\
+$\le 0.25$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} The corresponding ratio for stETH/ETH is around $(2.11\% / 6.9\%) = 0.306$. Hence $S1b = 3$.
+
+\textbf{S1c.} Maximum Liquidation Losses = $\min (1, Lev \cdot \text{maximum drawdown})$ \\
+Maximum liquidation losses gauges the maximum daily liquidation losses in history given the current leverage.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Maximum Liquidation Losses (MLF)} & \textbf{Score (S1c)} \\
+\midrule
+$< 0.2$ & 1 \\
+$0.2 \le MLF < 0.5$ & 2 \\
+$0.5 \le MLF < 0.8$ & 3 \\
+$0.8 \le MLF < 1$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} The MLF of the vault is $10 \times 6.9\% = 69\%$ of the initial capital, so $S1c = 3$. 
+
+For simplicity, I assign equal weights to the 3 sub-categories and obtain $S1 = (S1a + S1b + S1c) / 3$. In this vault's case, $S1 = 2.33$.
+
+\textbf{S2. Price Risk} \\
+Assessing the correlation of the vault assets return with respect to the overall crypto market (the beta coefficient): beta coefficient $< 1$ (less volatile); $= 1$ (same as the market); $> 1$ (more volatile than the market).
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Beta Coefficient ($\beta$)} & \textbf{Score (S2)} \\
+\midrule
+$< 0.8$ & 1 \\
+$0.8 \le \beta < 1.1$ & 2 \\
+$1.1 \le \beta < 1.5$ & 3 \\
+$\beta > 1.5$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} Ethereum's returns have been more volatile than Bitcoin, which largely determines the overall crypto market, but it tends to be less volatile than other altcoins. $\beta$ can be expected to be between 1.1 and 1.5, so $S2 = 3$.
+
+\subsection*{B. DeFi Trading Risks}
+
+\textbf{S3. Negative Carry Risk:} This measures the frequency of the strategy generating a negative net carry $(r_s + r_D < r_B)$, meaning the cost of borrowing exceeds the yield generated from staking and lending, which eats into the principal.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Negative Net Carry (NNC) (Frequency/Year)} & \textbf{Score (S3)} \\
+\midrule
+$\le 5\%$ & 1 \\
+$5\% < NNC \le 10\%$ & 2 \\
+$10\% < NNC \le 20\%$ & 3 \\
+$NNC > 20\%$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+This metric highly depends on the choice of platforms. This may be simplified by fixing the choices of the most popular platforms with deepest liquidity. \\
+\textit{Assessment on the Vault:} This needs to be further confirmed by data, but from Index Coop's statistics on their strategy, around 10\% of their staking days have negative yields, so we can assign $S3 = 3$.
+
+\textbf{S4. Liquidity \& Slippage Risk:} The total stETH/ETH liquidity depth available within a certain slippage compared to the max vault size.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Liquidity Depth / Max Vault Size} & \textbf{Score (S4)} \\
+\midrule
+$\ge 5\text{x}$ & 1 \\
+$3\text{x} < \text{ratio} < 5\text{x}$ & 2 \\
+$1\text{x} < \text{ratio} \le 3\text{x}$ & 3 \\
+$\le 1\text{x}$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} Swapping and withdrawing assets with a \$40M vault requires significant liquidity depth on the decentralized exchanges. A liquidation cascade coinciding with low liquidity could result in high slippage. The Curve ETH/stETH pool depth is \$187M while the pool depths on Uniswap ETH/USDC pools range between \$50M to \$110M. With diversification on different pools, 3x can be attained, so $S4 = 2$.
+
+\textbf{S5. Impermanent Loss:} Max historical IL for the stablecoin LP (if used) over a 7-day period.
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Impermanent Loss (IL)} & \textbf{Score (S5)} \\
+\midrule
+N/A (no LP used) & 1 \\
+$\le 0.1\%$ & 2 \\
+$0.1\% < \text{Max IL} \le 0.5\%$ & 3 \\
+$\text{Max IL} > 0.5\%$ & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} As no LP adopted in the strategy, $S5 = 1$.
+
+\subsection*{C. Protocol Security Risks}
+
+\textbf{S6. Smart Contract Audit Risk:} Measures the due diligence on the protocols used (e.g. Lido, Aave, Morpho).
+
+\begin{tabularx}{0.6\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Audit Risk} & \textbf{Score (S6)} \\
+\midrule
+$>5$ Major Audits, Active Bug Bounty & 1 \\
+3-5 Major Audits, Active Bug Bounty & 2 \\
+1-2 Audits, No/Small Bug Bounty & 3 \\
+No recent audits, Beta/Alpha stage & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} as all the protocols involved have $>5$ major audits, $S6 = 1$.
+
+\textbf{S7. Protocol Dependency Risk}
+
+\begin{tabularx}{0.8\textwidth}{@{} X c @{}}
+\toprule
+\textbf{Protocol Dependency Risk} & \textbf{Score (S7)} \\
+\midrule
+Highly diversified validator set, no single point of failure & 1 \\
+Centralized control with multi-sig security & 2 \\
+High governance/admin key risk & 3 \\
+New protocol, unproven battle-testing & 4 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Assessment on the Vault:} The strategy involves the largest and most established DeFi protocols. While a failure is systemic, the risk score for their stability is the lowest possible, so $S7 = 1$.
+
+\section*{F. Overall Assessment and Corresponding Risk Mitigation}
+The overall aggregate score of the vault is 2.166 out of 4, which indicates a moderate level of overall risk.
+
+\textbf{1. Assessing the Current Risk Level} \\
+The final score reflects a balance of strong and weak points:
+\begin{itemize}
+    \item \textbf{Positive Contributors (Lowering the Score):} The score benefits from the low historical liquidation frequency, indicating recent market stability, and the high security of core protocols (low audit risk and protocol dependency).
+    \item \textbf{Major Drivers of Risk (Increasing the Score):} The dominant factors driving the score into the "Moderate" range are the high theoretical financial damage from a tail event, specifically the maximum liquidation losses, and ongoing operational issues like the high potential for negative carry. The vault's reliance on a highly volatile asset (ETH) also contributes significantly.
+\end{itemize}
+
+\textbf{2. Informing Risk Mitigation Decisions} \\
+The risk score's utility lies in breaking down the aggregate number into its constituent factors, allowing for targeted risk mitigation that maximizes the APR while addressing the highest weighted risks.
+
+\begin{itemize}
+    \item \textbf{High Maximum Liquidation Losses (Mandatory Deleveraging \& Liquidation Protection):} Incorporate liquidation protection policies such as deleveraging based on self-imposed liquidation buffers and market volatility. Portfolio optimization models like Mean-CVaR portfolios and drawdown portfolios can help determine the required levels quantitatively.
+    
+    \item \textbf{High Maximum Liquidation Losses (Portfolio Diversification or Delta-Neutral Hedging):} Shift a portion of the ETH exposure to other assets (e.g., rETH or cbETH) or implement a partial short position (ETH perpetual futures) to isolate the staking yield.
+    
+    \item \textbf{Potential for Negative Carry (Active Yield Optimization and Reallocation):} The weekly rebalancing policy should include actively monitoring the spread across multiple lending platforms (e.g. Aave, Morpho, Compound) and reallocating the borrowed ETH funds to the platform offering the lowest borrowing rate and highest collateral supply rate.
+\end{itemize}
+
+\end{document}
