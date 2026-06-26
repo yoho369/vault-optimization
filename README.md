@@ -1,4 +1,4 @@
-# A Conceptual Discussion on Recursive Vault Optimization & Vault Risk Analysis
+# A Conceptual Discussion on DeFi Vault Optimization & Vault Risk Analysis
 
 A quantitative framework analyzing recursive leveraged staking strategies (e.g., looping ETH/stETH across DeFi lending venues like Aave and Morpho). 
 
